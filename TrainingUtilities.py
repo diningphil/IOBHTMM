@@ -1,3 +1,28 @@
+# ################################################################### #
+# Copyright © 2017 Federico Errica                                    #
+#                                                                     #
+# Input-Output Bottom-Up Hidden Tree Markov Model (IOBHTMM).          #
+# Bacciu, D., Micheli, A. and Sperduti, A., 2013.                     #
+# An input–output hidden Markov model for tree transductions.         #
+# Neurocomputing, 112, pp.34-46.                                      #
+#                                                                     #
+# This file is part of the IOBHTMM.                                   #
+#                                                                     #
+# IOBHTMM is free software: you can redistribute it and/or modify     #
+# it under the terms of the GNU General Public License as published by#
+# the Free Software Foundation, either version 3 of the License, or   #
+# (at your option) any later version.                                 #
+#                                                                     #
+# IOBHTMM is distributed in the hope that it will be useful,          #
+# but WITHOUT ANY WARRANTY; without even the implied warranty of      #
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the        #
+# GNU General Public License for more details.                        #
+#                                                                     #
+# You should have received a copy of the GNU General Public License   #
+# along with IOBHTMM. If not, see <http://www.gnu.org/licenses/>.     #
+#                                                                     #
+# ################################################################### #
+
 from IOBHTMM import IOBHTMM
 import concurrent.futures
 from threading import Lock
@@ -8,7 +33,7 @@ import pickle
 import math
 
 
-def __parallel_holdout_computation(C, L, M, K, train_set, val_set,
+def __parallel_holdout_computation(C, L, M, K, stationarity, train_set, val_set,
                                    max_epochs, threshold, runs, choose_by_vote,
                                    best_C, score_function, tr_expected_complete_log_likelihood, val_accuracy,
                                    training_histories, lock, store, name):
@@ -23,7 +48,7 @@ def __parallel_holdout_computation(C, L, M, K, train_set, val_set,
     for t in range(0, runs):
         print("Run %d for C = %d" % (t+1, C))
 
-        model = IOBHTMM(L, C, M, K)
+        model = IOBHTMM(L, C, M, K, stationarity=stationarity)
         training_history = model.train(train_set, threshold=threshold, max_epochs=max_epochs)
 
         class_accuracy = score_function(model, val_set, choose_by_vote=choose_by_vote)
@@ -63,20 +88,20 @@ def __parallel_holdout_computation(C, L, M, K, train_set, val_set,
     lock.release()
 
 
-def holdout(c_values, L, M, K, train_set, val_set, max_epochs, threshold, score_function, runs=1, choose_by_vote=False,
+def holdout(c_values, L, M, K, stationarity, train_set, val_set, max_epochs, threshold, score_function, runs=1, choose_by_vote=False,
             parallel=-1, store=False, name=''):
     # PRECONDITION: score_function must return a value that must be maximised (e.g. accuracy ok, error not ok)
 
     logging.basicConfig(filename='./logging/CV_info_' + name + '_' + datetime.now().strftime('%Y-%m-%d %H:%M:%S') +
                                  '.log', level=logging.DEBUG)
-    logging.info('Starting CV with parameters ' + str(c_values) + " " + str(l) + " " + str(m) + " " + str(k) + " " +
+    logging.info('Starting CV with parameters ' + str(c_values) + " " + str(L) + " " + str(M) + " " + str(K) + " " +
                  str(max_epochs) + " " + str(threshold) + " " + str(runs) + " " + str(choose_by_vote)
                  + " " + str(parallel) + " " + str(store))
 
     # Simple hold-out validation
 
     # An ugly trick to pass integers by reference
-    best_C = [-1]
+    best_C = [c_values[0]]
     tr_expected_complete_log_likelihood = [0.]
     val_accuracy = [0.]
     training_histories = []
@@ -86,7 +111,7 @@ def holdout(c_values, L, M, K, train_set, val_set, max_epochs, threshold, score_
     if parallel <= 1:
         for C in c_values:
             print("Training for C value ", C)
-            __parallel_holdout_computation(C, L, M, K, train_set, val_set,
+            __parallel_holdout_computation(C, L, M, K, stationarity, train_set, val_set,
                                            max_epochs, threshold, runs, choose_by_vote,
                                            best_C, score_function, tr_expected_complete_log_likelihood, val_accuracy,
                                            training_histories, lock, store, name)
@@ -94,7 +119,7 @@ def holdout(c_values, L, M, K, train_set, val_set, max_epochs, threshold, score_
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
             # Start the load operations and mark each future with its URL
-            future_to_C = {executor.submit(__parallel_holdout_computation, C, L, M, K, train_set, val_set,
+            future_to_C = {executor.submit(__parallel_holdout_computation, C, L, M, K, stationarity, train_set, val_set,
                                            max_epochs, threshold, runs, choose_by_vote,
                                            best_C, score_function, tr_expected_complete_log_likelihood, val_accuracy,
                                            training_histories, lock, store, name): C for C in c_values}
@@ -115,11 +140,11 @@ def holdout(c_values, L, M, K, train_set, val_set, max_epochs, threshold, score_
     return best_C[0], tr_expected_complete_log_likelihood[0], val_accuracy[0], training_histories
 
 
-def __parallel_kfold_computation(C, L, M, K, train_set, folds,
+def __parallel_kfold_computation(C, L, M, K, stationarity, train_set, folds,
                                    max_epochs, threshold, runs, choose_by_vote,
                                    best_C, score_function, tr_expected_complete_log_likelihood, val_accuracy,
                                    lock):
-    
+
     set_dim = len(train_set)
     fold_dim = math.floor(set_dim / folds)
 
@@ -149,7 +174,7 @@ def __parallel_kfold_computation(C, L, M, K, train_set, folds,
         for t in range(0, runs):
             print("Run %d for C = %d" % (t+1, C))
 
-            model = IOBHTMM(L, C, M, K)
+            model = IOBHTMM(L, C, M, K, stationarity=stationarity)
             training_history = model.train(train_k, threshold=threshold, max_epochs=max_epochs)
 
             class_accuracy = score_function(model, val_k, choose_by_vote=choose_by_vote)
@@ -186,7 +211,7 @@ def __parallel_kfold_computation(C, L, M, K, train_set, folds,
     lock.release()
 
 
-def kfold_cv(c_values, l, m, k, train_set, folds, max_epochs, threshold, score_function, runs=1, choose_by_vote=False, parallel=-1,
+def kfold_cv(c_values, l, m, k, stationarity, train_set, folds, max_epochs, threshold, score_function, runs=1, choose_by_vote=False, parallel=-1,
             store=False, name=''):
     # PRECONDITION: score_function must return a value that must be maximised (e.g. accuracy ok, error not ok)
 
@@ -200,7 +225,7 @@ def kfold_cv(c_values, l, m, k, train_set, folds, max_epochs, threshold, score_f
     # Simple hold-out validation
 
     # An ugly trick to pass integers by reference
-    best_C = [-1]
+    best_C = [c_values[0]]
     tr_expected_complete_log_likelihood = [0.]
     val_accuracy = [0.]
 
@@ -209,7 +234,7 @@ def kfold_cv(c_values, l, m, k, train_set, folds, max_epochs, threshold, score_f
     if parallel <= 1:
         for C in c_values:
             print("Training for C value ", C)
-            __parallel_kfold_computation(C, l, m, k, train_set, folds,
+            __parallel_kfold_computation(C, l, m, k, stationarity, train_set, folds,
                                            max_epochs, threshold, runs, choose_by_vote,
                                            best_C, score_function, tr_expected_complete_log_likelihood, val_accuracy,
                                            lock)
@@ -217,7 +242,7 @@ def kfold_cv(c_values, l, m, k, train_set, folds, max_epochs, threshold, score_f
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
             # Start the load operations and mark each future with its URL
-            future_to_C = {executor.submit(__parallel_kfold_computation, C, l, m, k, train_set, folds,
+            future_to_C = {executor.submit(__parallel_kfold_computation, C, l, m, k, stationarity, train_set, folds,
                                            max_epochs, threshold, runs, choose_by_vote,
                                            best_C, score_function, tr_expected_complete_log_likelihood, val_accuracy,
                                            lock): C for C in c_values}
@@ -273,12 +298,7 @@ def transduction_score(model, dataset, choose_by_vote=False):  # last param need
         predictions, tree_votes = model.predict(sample)
 
         correct += np.sum(predictions == Y)
-        '''
-        for u in range(0, Un):
-            node_u = id_to_node[u]
-            if predictions[u] == Y[u]:
-                correct = correct + 1
-        '''
+
     return (correct/N)*100.0
 
 

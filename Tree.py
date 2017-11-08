@@ -1,3 +1,28 @@
+# ################################################################### #
+# Copyright © 2017 Federico Errica                                    #
+#                                                                     #
+# Input-Output Bottom-Up Hidden Tree Markov Model (IOBHTMM).          #
+# Bacciu, D., Micheli, A. and Sperduti, A., 2013.                     #
+# An input–output hidden Markov model for tree transductions.         #
+# Neurocomputing, 112, pp.34-46.                                      #
+#                                                                     #
+# This file is part of the IOBHTMM.                                   #
+#                                                                     #
+# IOBHTMM is free software: you can redistribute it and/or modify     #
+# it under the terms of the GNU General Public License as published by#
+# the Free Software Foundation, either version 3 of the License, or   #
+# (at your option) any later version.                                 #
+#                                                                     #
+# IOBHTMM is distributed in the hope that it will be useful,          #
+# but WITHOUT ANY WARRANTY; without even the implied warranty of      #
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the        #
+# GNU General Public License for more details.                        #
+#                                                                     #
+# You should have received a copy of the GNU General Public License   #
+# along with IOBHTMM. If not, see <http://www.gnu.org/licenses/>.     #
+#                                                                     #
+# ################################################################### #
+
 import numpy as np
 
 
@@ -52,7 +77,7 @@ class Node(object):
         Add a node to the children.
         :param x:
         :param y:
-        :param pos: the position of the node wrt the parent
+        :param pos: the position of the node wrt the parent, from 0 to L-1
         :return:
         """
         if len(self.children) == 0:
@@ -93,34 +118,6 @@ class Node(object):
     def is_a_leaf(self):
         return len(self.children) == 0
 
-    def complete_tree(self, m, k):
-        """
-        If an internal node has less than L children, it adds them with special x,y values
-        :param m: the M parameter of the IO-BHTMM model
-        :param k: the K parameter of the IO-BHTMM model
-        :return:
-        """
-        visited_children = []  # The stack, elements are (position, node)
-
-        if not self.is_a_leaf():
-            for i in range(0, self.L):
-                if self.get_lth_child(i) is None:
-                    self.add_child(m, k, i)
-
-        for child in self.children:
-            visited_children.append(child)
-
-        while len(visited_children) != 0:
-            first_node = visited_children.pop(0)  # pos goes from {0..L-1}
-
-            if not first_node.is_a_leaf():
-                for i in range(0, self.L):
-                    if first_node.get_lth_child(i) is None:
-                        first_node.add_child(m, k, i)
-
-                for child in first_node.children:
-                    visited_children.append(child)
-
     def dag_ordering(self):
         """
         Assign an incremental index to each node, from left to right and from level to level
@@ -147,9 +144,22 @@ class Node(object):
         Parents = [-1]
 
         if len(self.children) == 0:
-            number_of_leaves = 1
-            return id_to_node, number_of_nodes, number_of_leaves, np.array([self.x]), np.array([self.y]), \
-                   np.array([-1])
+            self.children = [None] * self.L  # a root without children
+            self.id_to_node = id_to_node
+            self.number_of_nodes = 1
+            self.number_of_leaves = 0
+
+            self.X = np.array(X)
+            self.Y = np.array(Y)
+            self.Pos = np.array(Pos)
+            self.Parents = np.array(Parents)
+
+            Un = number_of_nodes
+            In = number_of_nodes - number_of_leaves
+
+            self.dagResults = id_to_node, Un, In, np.array([self.x]), np.array([self.y]), \
+                   np.array([-1]), np.array([-1])
+            return self.dagResults
 
         elif len(self.children) != self.L:
             raise Exception('Each int. node should have L children. \
@@ -216,9 +226,7 @@ class Node(object):
 
     def get_internal_nodes_by_level(self):
         # PRECONDITION: a dag ordering has already been done
-
         U_levels = []
-
         Children_ids_levels = []
         Children_pos_levels = []
         Null_pos_levels = []
@@ -227,6 +235,18 @@ class Node(object):
 
         # Dag ordering corresponds to a BFS: hence the ordering in the depth for internal nodes
         In = self.number_of_nodes - self.number_of_leaves
+        Un = self.number_of_nodes
+
+        assert In != 0
+        '''
+        if In == 0:
+
+            print("IN è zero")
+
+            last_depth = 0  # Internal nodes depth
+            return U_levels, Children_pos_levels, Children_ids_levels, Null_pos_levels, \
+               U_children_levels, U_null_levels, last_depth
+        '''
 
         last_depth = 1
         u = 0
@@ -261,7 +281,9 @@ class Node(object):
                 u_level.append(u)
 
                 u += 1
-                node_u = self.id_to_node[u]
+
+                if u < Un:
+                    node_u = self.id_to_node[u]
 
             if u < In:
                 last_depth = node_u.depth

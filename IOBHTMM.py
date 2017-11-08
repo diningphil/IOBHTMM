@@ -1,3 +1,28 @@
+# ################################################################### #
+# Copyright © 2017 Federico Errica                                    #
+#                                                                     #
+# Input-Output Bottom-Up Hidden Tree Markov Model (IOBHTMM).          #
+# Bacciu, D., Micheli, A. and Sperduti, A., 2013.                     #
+# An input–output hidden Markov model for tree transductions.         #
+# Neurocomputing, 112, pp.34-46.                                      #
+#                                                                     #
+# This file is part of the IOBHTMM.                                   #
+#                                                                     #
+# IOBHTMM is free software: you can redistribute it and/or modify     #
+# it under the terms of the GNU General Public License as published by#
+# the Free Software Foundation, either version 3 of the License, or   #
+# (at your option) any later version.                                 #
+#                                                                     #
+# IOBHTMM is distributed in the hope that it will be useful,          #
+# but WITHOUT ANY WARRANTY; without even the implied warranty of      #
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the        #
+# GNU General Public License for more details.                        #
+#                                                                     #
+# You should have received a copy of the GNU General Public License   #
+# along with IOBHTMM. If not, see <http://www.gnu.org/licenses/>.     #
+#                                                                     #
+# ################################################################### #
+
 import numpy as np
 import pickle
 import time
@@ -119,13 +144,13 @@ class IOBHTMM:
             node.get_internal_nodes_by_level()
 
         for level in range(tree_depth - 1, -1, -1):
-            u_level = np.array(U_levels[level])
-            u_null_level = np.array(U_null_levels[level])
-            u_children_level = np.array(U_children_levels[level])
+            u_level = np.array(U_levels[level], dtype='int')
+            u_null_level = np.array(U_null_levels[level], dtype='int')
+            u_children_level = np.array(U_children_levels[level], dtype='int')
 
-            null_pos_level = np.array(Null_Pos_levels[level])
-            children_pos_level = np.array(Children_pos_levels[level])
-            children_ids_level = np.array(Children_ids_levels[level])
+            null_pos_level = np.array(Null_Pos_levels[level], dtype='int')
+            children_pos_level = np.array(Children_pos_levels[level], dtype='int')
+            children_ids_level = np.array(Children_ids_levels[level], dtype='int')
 
             # for non-null children
             if self.stationarity == self.POSITIONAL:
@@ -289,6 +314,9 @@ class IOBHTMM:
 
         votes[predictions[0]] = votes[predictions[0]] + 1
 
+        if Un == 1:
+            return np.array([i1_best]), np.array([i1_best])
+
         # ------ Compute best state and emission label for the other nodes ------ #
 
         # Downward recursion to propagate the optimal node at the root to the internal nodes
@@ -329,6 +357,7 @@ class IOBHTMM:
 
         batch_dim = 250
         batches = int(np.floor(N / batch_dim))
+        batches = 1 if batches == 0 else batches
         batches = batches + 1 if N % batches != 0 else batches
 
         # num = numerator | den = denominator
@@ -455,6 +484,7 @@ class IOBHTMM:
                                                 np.array(u_rep_for_null[level]) + total_nodes])
 
                     leaves_n_tree.append(Un - In)
+
                     Parents_batch = np.concatenate((Parents_batch, Parents + total_nodes))
 
                     total_nodes = total_nodes + Un
@@ -462,6 +492,7 @@ class IOBHTMM:
                     first_n_Un.append(Un)
                     X_batch = np.concatenate((X_batch, X))
                     Y_batch = np.concatenate((Y_batch, Y))
+
                     Pos_batch = np.concatenate((Pos_batch, Pos))
 
                 leaves_n_tree = np.array(leaves_n_tree)
@@ -525,13 +556,13 @@ class IOBHTMM:
                 for level in range(max_depth - 1, -1, -1):  # depth 1 (level 0) included
                     # intuitively, levels are in range from 0 to max_depth - 1
 
-                    u_level = np.array(u_by_level_batch[level])
-                    u_null_level = np.array(u_rep_for_null_batch[level])
-                    u_children_level = np.array(u_rep_for_children_batch[level])
+                    u_level = np.array(u_by_level_batch[level], dtype='int')
+                    u_null_level = np.array(u_rep_for_null_batch[level], dtype='int')
+                    u_children_level = np.array(u_rep_for_children_batch[level], dtype='int')
 
-                    null_pos_level = np.array(null_positions_batch[level])
-                    children_pos_level = np.array(children_positions_batch[level])
-                    children_ids_level = np.array(children_ids_batch[level])
+                    null_pos_level = np.array(null_positions_batch[level], dtype='int')
+                    children_pos_level = np.array(children_positions_batch[level], dtype='int')
+                    children_ids_level = np.array(children_ids_batch[level], dtype='int')
 
                     X_level = X_batch[u_level]
                     Y_level = Y_batch[u_level]
@@ -590,10 +621,9 @@ class IOBHTMM:
 
                 # --------------- State occupancy posterior (eps) for root --------------- #
                 posteriors[only_roots, :] = betas[only_roots, :]
-                # ------------------------------------------------------------------ #
+                # ---------------------------------------------------------------------------- #
 
                 for level in range(1, max_depth + 1):  # root not included
-
                     if level == max_depth:
                         u_level = np.nonzero(mask_leaves)[0]
                     else:
@@ -751,7 +781,10 @@ class IOBHTMM:
                               np.reshape(den, (den.shape[0], 1, den.shape[1])))
                     # ------------------------------------- #
 
-                else:  # full stationariety TODO THIS REQUIRE DOUBLE THE TIME ---> HAS TO BE IMPROVED!
+                else:  # full stationariety
+                    # NOTE: add.at can be slow here, more than in the POSITIONAL case.
+                    # It may be useful to have a function that assumes an ordering to do
+                    # the same thing, and then provide the data ordered.Copyright © 2007 Free Software Foundation, Inc. <https://fsf.org/>
 
                     # --------- PRIORS  --------- #
                     sum_num_pr = np.sum(state_transition_posteriors[leaves_parents, :, :, 0:self.C], axis=(1, 2))
@@ -857,14 +890,16 @@ class IOBHTMM:
 
             epoch = epoch + 1
 
+            '''
             print("Epoch in ", current_milli_time() - timeEpoch)
             print("Avg E in ", totalE / N)
             print("Avg M in ", totalM / N)
             print("Avg Ell in ", totalEll / N)
+            '''
 
         return training_log_Lc_history
 
-    def store_model(self, filename):
+    def save_model(self, filename):
         """
         Store the model into a file
         :param filename:
